@@ -7,13 +7,14 @@
 #include <esp_timer.h>
 
 TwoWire i2c0 = TwoWire(0);
-TwoWire i2c1 = TwoWire(1);
+// TwoWire i2c1 = TwoWire(1);
 
 LiquidCrystal_PCF8574 lcd(0x3f); 
 
 // Adafruit_BMP280 bmp(&i2c1);
 // Adafruit_AHTX0 aht;
-Adafruit_BME680 bme(&i2c1);
+// Adafruit_BME680 bme(&i2c1);
+Adafruit_BME680 bme(&i2c0);
 
 // hw_timer_t *sensorsTimer = nullptr;
 // hw_timer_t *displayTimer = nullptr;	
@@ -25,17 +26,26 @@ esp_timer_handle_t sleepTimer;
 esp_timer_handle_t stayAwakeTimer;
 
 portMUX_TYPE doplerDetectMux = portMUX_INITIALIZER_UNLOCKED;
+portMUX_TYPE motionDetectMux = portMUX_INITIALIZER_UNLOCKED;
 portMUX_TYPE sensorsTimerMux = portMUX_INITIALIZER_UNLOCKED;
 portMUX_TYPE displayTimerMux = portMUX_INITIALIZER_UNLOCKED;
 portMUX_TYPE sleepTimerMux = portMUX_INITIALIZER_UNLOCKED;
 portMUX_TYPE stayAwakeTimerMux = portMUX_INITIALIZER_UNLOCKED;
 
-const int doplerPin = 15;
 volatile bool wakeUp = true;
+
+const int doplerPin = 15;
 void IRAM_ATTR doplerDetectISR() {
   portENTER_CRITICAL_ISR(&doplerDetectMux);
   wakeUp = true;
   portEXIT_CRITICAL_ISR(&doplerDetectMux);
+}
+
+const int motionPin = 27;
+void IRAM_ATTR motionDetectISR() {
+  portENTER_CRITICAL_ISR(&motionDetectMux);
+  wakeUp = true;
+  portEXIT_CRITICAL_ISR(&motionDetectMux);
 }
 
 bool sensorsLogging = true;
@@ -82,8 +92,9 @@ void setup()
   i2c0.setClock(100000);
   lcd.begin(20, 4, i2c0);
 
-  i2c1.begin(18, 5); 
-  i2c1.setClock(100000);
+  // i2c1.begin(18, 5); 
+  // i2c1.setClock(100000);
+
   // bmp.begin(0x77);
   // bmp.setSampling(Adafruit_BMP280::MODE_NORMAL, Adafruit_BMP280::SAMPLING_X2, Adafruit_BMP280::SAMPLING_X16, Adafruit_BMP280::FILTER_X16, Adafruit_BMP280::STANDBY_MS_500);
   // aht.begin(&i2c1, 0, 0x38);
@@ -97,6 +108,9 @@ void setup()
 
   pinMode(doplerPin, INPUT_PULLUP);
   attachInterrupt(digitalPinToInterrupt(doplerPin), doplerDetectISR, RISING);
+
+  pinMode(motionPin, INPUT_PULLUP);
+  attachInterrupt(digitalPinToInterrupt(motionPin), motionDetectISR, RISING);
 
   // sensorsTimer = timerBegin(0, 80, true);
   // timerAttachInterrupt(sensorsTimer, &sensorsUpdateISR, true);
@@ -244,4 +258,6 @@ void loop()
 
     lcd.setBacklight(true);
   }
+
+  Serial.println(digitalRead(motionPin));
 }

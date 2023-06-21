@@ -1,20 +1,21 @@
 #include <cmath>
+#include <vector>
 
 #include <TimeLib.h>
 #include <Adafruit_NeoPixel.h>
+#include <SPI.h>
+#include <RTClib.h>
 
 int mod(const int dividend, const int divisor) {
   const int remainder = dividend % divisor;
   return remainder < 0 ? remainder + divisor : remainder;
 }
 
-int wrap(const int value, const int min_, const int max_)
-{
+int wrap(const int value, const int min_, const int max_) {
     return min_ + mod(value - min_, max_ - min_);
 }
 
-int clamp(const int value, const int min_, const int max_)
-{
+int clamp(const int value, const int min_, const int max_) {
   return max(min(value, max_), min_);
 }
 
@@ -49,8 +50,7 @@ uint32_t colourMultiply(const uint32_t a, const uint32_t b) {
   );
 }
 
-void drawHands(Adafruit_NeoPixel &strip, const int hour, const int minute, const int second, const float stripOffset = 0.0f)
-{
+void drawHands(Adafruit_NeoPixel &strip, const int hour, const int minute, const int second, const float stripOffset = 0.0f) {
   static const bool toggleDivisions = true;
 
   static const uint32_t originColour = strip.Color(255, 127, 127);
@@ -65,47 +65,50 @@ void drawHands(Adafruit_NeoPixel &strip, const int hour, const int minute, const
   static const uint8_t minuteCount = 60;
   static const uint8_t secondCount = 60;
 
-  const uint8_t divisionPixels = strip.numPixels() / divisionCount;
-  const uint8_t hourPixels = strip.numPixels() / hourCount;
-  const uint8_t minutePixels = strip.numPixels() / minuteCount;
-  const uint8_t secondPixels = strip.numPixels() / secondCount;
-
-  static const uint8_t originMarker = 2;
-  static const uint8_t divisionMarker = 2;
-  static const uint8_t hourMarker = 6;
-  static const uint8_t minuteMarker = 4;
-  static const uint8_t secondMarker = 2;
-
-  auto inBand = [&strip](const float pos, const float bandCentre, const float bandWidth) -> bool {
-    const int testPos = pos + (abs(bandCentre - pos) <= (strip.numPixels() / 2) ? 0 : bandCentre > pos ? strip.numPixels() : -strip.numPixels());
-    const int halfBandWidth = bandWidth / 2;
-    return (testPos >= bandCentre - halfBandWidth) && (testPos < bandCentre + halfBandWidth);
-  };
+  const float divisionPixels = (float)strip.numPixels() / (float)divisionCount;
+  const float hourPixels = (float)strip.numPixels() / (float)hourCount;
+  const float minutePixels = (float)strip.numPixels() / (float)minuteCount;
+  const float secondPixels = (float)strip.numPixels() / (float)secondCount;
 
   auto bandOverlap = [&strip](const float bandACentre, const float bandAWidth, const float bandBCentre, const float bandBWidth) -> float {
-    // const float offset = abs(bandACentre - bandBCentre);
+    const float offset = abs(bandACentre - bandBCentre);
+    const float spacing = (bandAWidth + bandBWidth) / 2.0;
+    return  offset >= spacing ? 0.0f : min(spacing - offset, min(bandAWidth, bandBWidth));
     // const float centreDistance = min(offset, strip.numPixels() - offset);
     // return min(min(bandAWidth, bandBWidth), max((bandAWidth / 2.0f + bandBWidth / 2.0f) - centreDistance, 0.0f));
-    const float halfBandAWidth = bandAWidth / 2.0f;
-    const float halfBandBWidth = bandBWidth / 2.0f;
-    const float overlapStart = max(bandACentre - halfBandAWidth, bandBCentre - halfBandBWidth);
-    const float overlapEnd = min(bandACentre + halfBandAWidth, bandBCentre + halfBandBWidth);
-    return overlapEnd - overlapStart;
+    // const float halfBandAWidth = bandAWidth / 2.0f;
+    // const float halfBandBWidth = bandBWidth / 2.0f;
+    // const float overlapStart = max(bandACentre - halfBandAWidth, bandBCentre - halfBandBWidth);
+    // const float overlapEnd = min(bandACentre + halfBandAWidth, bandBCentre + halfBandBWidth);
+    // return overlapEnd - overlapStart;
   };
 
-  auto bandOverlapWrapped = [&strip](const float bandACentre, const float bandAWidth, const float bandBCentre, const float bandBWidth) -> float {
-    const float halfBandAWidth = bandAWidth / 2.0f;
-    const float halfBandBWidth = bandBWidth / 2.0f;
-    const int wrapMin = mod(min(bandACentre - halfBandAWidth, bandBCentre - halfBandBWidth), strip.numPixels());
-    const int wrapMax = mod(max(bandACentre + halfBandAWidth, bandBCentre + halfBandBWidth), strip.numPixels());
-    for (int i = wrapMin; i <= wrapMax; ++i) {
-      const float bandACentreWrapped = 0.0;
-    }
-    return 0.0f;
-  };
+  // auto bandOverlapWrapped = [&strip](const float bandACentre, const float bandAWidth, const float bandBCentre, const float bandBWidth) -> float {
+  //   const float halfBandAWidth = bandAWidth / 2.0f;
+  //   const float halfBandBWidth = bandBWidth / 2.0f;
+  //   const int wrapMin = mod(min(bandACentre - halfBandAWidth, bandBCentre - halfBandBWidth), strip.numPixels());
+  //   const int wrapMax = mod(max(bandACentre + halfBandAWidth, bandBCentre + halfBandBWidth), strip.numPixels());
+  //   for (int i = wrapMin; i <= wrapMax; ++i) {
+  //     const float bandACentreWrapped = 0.0;
+  //   }
+  //   return 0.0f;
+  // };
 
   // Serial.println(bandOverlap(0.25f, 1.0f, 1.0f, 2.0f));
   // Serial.println(bandOverlap(0.75f, 1.0f, 1.0f, 2.0f));
+
+  struct Band {
+    float pos;
+    float width;
+    uint32_t colour;
+  };
+  std::vector<Band> bands{
+    {0.5f, 2, 0x00ffffff},
+    // {nearestDivision * divisionPixels + 0.5f, 2, 0x007f7f7f},
+    {hour * hourPixels, 4, 0x00ff0000},
+    {minute * minutePixels, 2, 0x0000ff00},
+    {second * secondPixels, 1, 0x000000ff},
+  };
 
   for (int i = 0; i < strip.numPixels(); ++i) {
     const uint16_t pixel = wrap(i + stripOffset, 0, strip.numPixels() - 1);
@@ -119,31 +122,15 @@ void drawHands(Adafruit_NeoPixel &strip, const int hour, const int minute, const
     const float pixelHour = round((pixel + 0.5f) / hourPixels);
 
     uint32_t colour = 0;
-    // Origin
-    // if (inBand(pixel, 0, originMarker)) {
-    if (bandOverlap(pixelCentre, 1.0f, 0.5f, originMarker) > 0.5f) {
-      colour = colourAdd(colour, originColour);
-    }    
-    // Divisions
-    // if (inBand(pixel, nearestDivision * divisionPixels, divisionMarker)) {
-    if (bandOverlap(pixelCentre, 1.0f, nearestDivision * divisionPixels + 0.5f, divisionMarker) > 0.5f) {
-      colour = colourAdd(colour, (!toggleDivisions || (second % 2 == 0)) ? divisionColour : divisionColourAlt);
-    }    
-    // // Hour
-    // if (inBand(pixel, hour * hourPixels, hourMarker)) {
-    if (bandOverlap(pixelCentre, 1.0f, hour * hourPixels + 0.5f, hourMarker) > 0.5f) {
-      colour = colourAdd(colour, hourColour);
+
+    for (auto &band : bands) {
+      const float overlap = bandOverlap(pixelCentre, 1.0f, band.pos + 0.5f, band.width);
+      // Serial.println("Overlap: " + String(overlap));
+      if (overlap > 0.5f) {
+        colour = colourAdd(colour, band.colour);
+      }
     }
-    // // Minute
-    // if (inBand(pixel, minute * minutePixels, minuteMarker)) {
-    if (bandOverlap(pixelCentre, 1.0f, minute * minutePixels + 0.5f, minuteMarker) > 0.5f) {
-      colour = colourAdd(colour, minuteColour);
-    }
-    // // Second
-    // if (inBand(pixel, second * secondPixels, secondMarker)) {
-    if (bandOverlap(pixelCentre, 1.0f, second * secondPixels + 0.5f, secondMarker) > 0.5f) {
-      colour = colourAdd(colour, secondColour);
-    }
+
     strip.setPixelColor(i, colour);
   }
 
@@ -165,16 +152,19 @@ void processSyncMessage() {
   }
 }
 
-time_t requestSync()
-{
+time_t requestSync() {
   Serial.write(TIME_REQUEST);  
   return 0; // the time will be sent later in response to serial mesg
 }
 
 Adafruit_NeoPixel *strip = nullptr;
 
+RTC_DS1307 rtc;
+
 void setup() {
   Serial.begin(115200);
+  Serial.println("SETUP!");
+
   setSyncProvider(requestSync);  //set function to call when sync required
 
   setTime(7, 45, 11, 5, 1, 2023);
@@ -187,13 +177,34 @@ void setup() {
   strip->begin();
   strip->setBrightness(31);
   strip->show(); // Initialize all pixels to 'off'
+
+  if (!rtc.begin()) {
+    Serial.println("Couldn't find RTC");
+    while(1);
+  }
+   rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
 }
 
 void loop() {
+  // Serial.println("LOOP!");
+  DateTime now = rtc.now();
+  // Serial.print(now.year(), DEC);
+  // Serial.print('/');
+  // Serial.print(now.month(), DEC);
+  // Serial.print('/');
+  // Serial.print(now.day(), DEC);
+  // Serial.print(' ');
+  // Serial.print(now.hour(), DEC);
+  // Serial.print(':');
+  // Serial.print(now.minute(), DEC);
+  // Serial.print(':');
+  // Serial.print(now.second(), DEC);
+  // Serial.println();
+
   if (Serial.available()) {
     processSyncMessage();
   }
 
-  Serial.println(String(hour()) + String(":") + String(minute()) + String(":") + String(second()));
+  // Serial.println(String(hour()) + String(":") + String(minute()) + String(":") + String(second()));
   drawHands(*strip, hour(), minute(), second(), 0);
 }
